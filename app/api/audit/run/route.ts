@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { nanoid } from "nanoid";
 import type { BrandIntelligence, AuditPrompt } from "../analyze/route";
+import { createAudit } from "@/lib/audit-store";
+
+// The audit loop runs up to 8 sequential Claude web-search calls plus
+// recommendation generation and a Blob write. Total wall time is ~3-4 minutes.
+// Without this, Vercel Hobby caps the function at 10 seconds.
+export const maxDuration = 300;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -152,9 +159,11 @@ Only return JSON, nothing else.`,
 export async function POST(req: NextRequest) {
   try {
     const {
+      url,
       brand,
       prompts,
-    }: { brand: BrandIntelligence; prompts: AuditPrompt[] } = await req.json();
+    }: { url?: string; brand: BrandIntelligence; prompts: AuditPrompt[] } =
+      await req.json();
 
     if (!brand || !prompts?.length) {
       return NextResponse.json(
@@ -216,7 +225,31 @@ export async function POST(req: NextRequest) {
       totalPrompts
     );
 
+    let auditId: string | null = null;
+    try {
+      auditId = nanoid(12);
+      await createAudit({
+        id: auditId,
+        url: url ?? "",
+        brand,
+        prompts: promptsToRun,
+        result: {
+          citationScore: brandScore,
+          totalPrompts,
+          citationRate: Math.round((brandScore / totalPrompts) * 100),
+          competitorScores,
+          winningBrands,
+          recommendations,
+        },
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("Failed to persist audit to Blob:", err);
+      auditId = null;
+    }
+
     return NextResponse.json({
+      auditId,
       citationScore: brandScore,
       totalPrompts,
       citationRate: Math.round((brandScore / totalPrompts) * 100),

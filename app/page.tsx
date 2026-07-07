@@ -7,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { BrandIntelligence, AuditPrompt } from "./api/audit/analyze/route";
+import ChatPlayground from "@/components/landing/chat-playground";
+import Faq from "@/components/landing/faq";
+import SampleAuditCard from "@/components/landing/sample-audit-card";
+import { oatkindSample } from "@/lib/sample-audit";
 
 type Recommendation = {
   title: string;
@@ -26,12 +30,6 @@ type RunResult = {
 };
 
 type Phase = "idle" | "analyzing" | "review" | "running" | "done";
-
-const impactColor: Record<string, string> = {
-  high: "bg-red-100 text-red-700",
-  medium: "bg-yellow-100 text-yellow-700",
-  low: "bg-green-100 text-green-700",
-};
 
 const promptTypeColor: Record<string, string> = {
   awareness: "bg-blue-50 text-blue-600",
@@ -63,7 +61,12 @@ export default function Home() {
   const [prompts, setPrompts] = useState<AuditPrompt[]>([]);
   const [result, setResult] = useState<RunResult | null>(null);
 
-  // Phase 1: analyze brand + generate prompts
+  const [email, setEmail] = useState("");
+  const [emailSubmitting, setEmailSubmitting] = useState(false);
+  const [emailSubmitted, setEmailSubmitted] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [auditId, setAuditId] = useState<string | null>(null);
+
   async function runAnalyze() {
     if (!url) return;
     setPhase("analyzing");
@@ -101,7 +104,6 @@ export default function Home() {
     }
   }
 
-  // Phase 2: run citation queries
   async function runAudit() {
     if (!brand) return;
     setPhase("running");
@@ -122,11 +124,12 @@ export default function Home() {
       const res = await fetch("/api/audit/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brand, prompts }),
+        body: JSON.stringify({ url, brand, prompts }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Audit failed");
       setResult(data);
+      if (data.auditId) setAuditId(data.auditId);
       setPhase("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -141,21 +144,57 @@ export default function Home() {
     setPrompts((prev) => prev.filter((_, i) => i !== index));
   }
 
-  const allScores = result && brand
-    ? [
-        { name: brand.brandName, score: result.citationScore, isBrand: true },
-        ...Object.entries(result.competitorScores).map(([name, score]) => ({
-          name,
-          score,
-          isBrand: false,
-        })),
-      ].sort((a, b) => b.score - a.score)
-    : [];
+  async function submitEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || emailSubmitting || !auditId) return;
+    setEmailSubmitting(true);
+    setEmailError("");
+    try {
+      const res = await fetch(`/api/audit/${auditId}/capture-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to submit email");
+      setEmailSubmitted(true);
+    } catch (err) {
+      setEmailError(
+        err instanceof Error ? err.message : "Failed to submit email"
+      );
+    } finally {
+      setEmailSubmitting(false);
+    }
+  }
 
-  // Only show brands scoring HIGHER than the audited brand — these are the actual winners
+  function scrollToAuditInput() {
+    document.getElementById("audit-input")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    setTimeout(() => {
+      document.getElementById("audit-input-field")?.focus();
+    }, 400);
+  }
+
+  const allScores =
+    result && brand
+      ? [
+          { name: brand.brandName, score: result.citationScore, isBrand: true },
+          ...Object.entries(result.competitorScores).map(([name, score]) => ({
+            name,
+            score,
+            isBrand: false,
+          })),
+        ].sort((a, b) => b.score - a.score)
+      : [];
+
   const trackedNames = brand
     ? [brand.brandName, ...brand.competitors].map((n) =>
-        n.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase()
+        n
+          .replace(/\s*\([^)]*\)/g, "")
+          .trim()
+          .toLowerCase()
       )
     : [];
   const topWinners = result
@@ -169,20 +208,48 @@ export default function Home() {
         .slice(0, 6)
     : [];
 
+  const busy = phase === "analyzing" || phase === "running";
+
   return (
     <main className="min-h-screen bg-gray-50">
-      <div className="max-w-3xl mx-auto px-4 py-16">
-        {/* Header */}
-        <div className="mb-10 text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-3">AI Presence Audit</h1>
-          <p className="text-gray-500 text-base">
-            Enter your website. We identify your brand, generate smart prompts, and show exactly where you stand in AI search.
+      {/* Top nav */}
+      <header className="max-w-6xl mx-auto px-4 py-6">
+        <span className="text-lg font-semibold text-gray-900">AIVisible</span>
+      </header>
+
+      {/* Hero */}
+      <section className="max-w-4xl mx-auto px-4 pt-8 pb-16 text-center">
+        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 leading-[1.1]">
+          See who ChatGPT recommends in your category.
+        </h1>
+        <p className="text-lg text-gray-500 max-w-2xl mx-auto">
+          Spoiler: probably not you. Watch a real AI answer for a real query,
+          then run the audit on your own brand.
+        </p>
+      </section>
+
+      {/* Chat playground */}
+      <section className="max-w-4xl mx-auto px-4 pb-24">
+        <ChatPlayground />
+      </section>
+
+      {/* Sub-hero URL input CTA */}
+      <section
+        id="audit-input"
+        className="max-w-3xl mx-auto px-4 pt-4 pb-8 scroll-mt-6"
+      >
+        <div className="text-center mb-8">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+            Run this on your own brand.
+          </h2>
+          <p className="text-sm text-gray-500">
+            Free. Takes about 60 seconds. No signup for the score.
           </p>
         </div>
 
-        {/* URL input — always visible */}
-        <div className="flex gap-3 mb-8">
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <Input
+            id="audit-input-field"
             placeholder="https://yourwebsite.com"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -190,49 +257,50 @@ export default function Home() {
               e.key === "Enter" && phase === "idle" && runAnalyze()
             }
             className="flex-1 h-12 text-base"
-            disabled={phase === "analyzing" || phase === "running"}
+            disabled={busy}
           />
           <Button
             onClick={runAnalyze}
-            disabled={!url || phase === "analyzing" || phase === "running"}
+            disabled={!url || busy}
             className="h-12 px-6"
           >
-            {phase === "analyzing" ? "Analyzing..." : "Analyze Brand"}
+            {phase === "analyzing"
+              ? "Analyzing..."
+              : "Get my citation score →"}
           </Button>
         </div>
 
-        {/* Loading states */}
-        {(phase === "analyzing" || phase === "running") && (
+        {busy && (
           <Card className="mb-6">
             <CardContent className="pt-6">
               <p className="text-sm text-gray-500 mb-3">{stepMsg}</p>
               <Progress value={null} className="h-1" />
               <p className="text-xs text-gray-400 mt-3">
                 {phase === "analyzing"
-                  ? "~10 seconds to identify brand and build prompts."
-                  : "~60 seconds. Querying AI engines across your prompt matrix."}
+                  ? "About 10 seconds to identify brand and build prompts."
+                  : "About 60 seconds. Querying AI engines across your prompt matrix."}
               </p>
             </CardContent>
           </Card>
         )}
 
-        {/* Error */}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-red-700 text-sm">
             {error}
           </div>
         )}
 
-        {/* Phase 2: Review */}
-        {(phase === "review" || phase === "running" || phase === "done") && brand && (
-          <div className="space-y-6 mb-6">
-            {/* Brand Profile */}
+        {/* Review phase: brand profile + prompt review */}
+        {(phase === "review" || phase === "running") && brand && (
+          <div className="space-y-6 mt-6">
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg">{brand.brandName}</CardTitle>
-                    <p className="text-sm text-gray-500 mt-0.5">{brand.category}</p>
+                    <p className="text-sm text-gray-500 mt-0.5">
+                      {brand.category}
+                    </p>
                   </div>
                   <div className="flex gap-2 flex-wrap justify-end">
                     <Badge variant="outline" className="text-xs">
@@ -246,35 +314,44 @@ export default function Home() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm text-gray-600">{brand.description}</p>
-                <div className="flex items-center gap-2 text-sm">
+                <div className="flex items-center gap-2 text-sm flex-wrap">
                   <span className="text-gray-400">Primary market:</span>
-                  <span className="font-medium text-gray-700">{brand.geography.primary}</span>
+                  <span className="font-medium text-gray-700">
+                    {brand.geography.primary}
+                  </span>
                   {brand.geography.secondary.length > 0 && (
                     <span className="text-gray-400">
                       · also {brand.geography.secondary.join(", ")}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 italic">{brand.geography.geoContext}</p>
+                <p className="text-xs text-gray-400 italic">
+                  {brand.geography.geoContext}
+                </p>
                 <div>
                   <p className="text-xs text-gray-400 mb-1">Buyer personas</p>
                   <div className="space-y-1">
                     {brand.personas.map((p, i) => (
                       <div key={i} className="text-sm">
-                        <span className="font-medium text-gray-700">{p.name}</span>
-                        <span className="text-gray-500"> — {p.description}</span>
+                        <span className="font-medium text-gray-700">
+                          {p.name}
+                        </span>
+                        <span className="text-gray-500">, {p.description}</span>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-gray-400 mb-1">Core differentiation</p>
-                  <p className="text-sm font-medium text-gray-700">{brand.coreDifferentiation}</p>
+                  <p className="text-xs text-gray-400 mb-1">
+                    Core differentiation
+                  </p>
+                  <p className="text-sm font-medium text-gray-700">
+                    {brand.coreDifferentiation}
+                  </p>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Prompt Review */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">Prompts to Test</CardTitle>
@@ -287,10 +364,7 @@ export default function Home() {
               <CardContent>
                 <div className="space-y-2 mb-4">
                   {prompts.map((p, i) => (
-                    <div
-                      key={i}
-                      className="flex items-start gap-2 group"
-                    >
+                    <div key={i} className="flex items-start gap-2 group">
                       <Badge
                         variant="outline"
                         className={`text-xs shrink-0 mt-0.5 ${promptTypeColor[p.type]}`}
@@ -299,12 +373,15 @@ export default function Home() {
                       </Badge>
                       <p className="text-sm text-gray-600 flex-1">{p.text}</p>
                       {p.geo && (
-                        <span className="text-xs text-gray-300 shrink-0">{p.geo}</span>
+                        <span className="text-xs text-gray-300 shrink-0">
+                          {p.geo}
+                        </span>
                       )}
                       {phase === "review" && (
                         <button
                           onClick={() => removePrompt(i)}
                           className="text-gray-300 hover:text-red-400 text-xs shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          aria-label={`Remove prompt ${i + 1}`}
                         >
                           ✕
                         </button>
@@ -321,16 +398,27 @@ export default function Home() {
             </Card>
           </div>
         )}
+      </section>
 
-        {/* Phase 3: Results */}
-        {phase === "done" && result && brand && (
+      {/* Results OR Sample audit preview */}
+      <section className="max-w-3xl mx-auto px-4 pb-20">
+        {phase === "done" && result && brand ? (
           <div className="space-y-6">
-            {/* Citation Score */}
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                Your audit for {brand.brandName}
+              </h2>
+              <p className="text-sm text-gray-500">
+                Free tier. Full breakdown emailed below.
+              </p>
+            </div>
+
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">AI Citation Score</CardTitle>
                 <p className="text-sm text-gray-500">
-                  How often your brand appears when buyers ask AI about your category
+                  How often your brand appears when buyers ask AI about your
+                  category.
                 </p>
               </CardHeader>
               <CardContent>
@@ -346,9 +434,19 @@ export default function Home() {
                   {allScores.map(({ name, score, isBrand }) => (
                     <div key={name}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className={isBrand ? "font-semibold text-gray-900" : "text-gray-600"}>
-                          {name}{" "}
-                          {isBrand && <span className="text-xs text-blue-500 ml-1">you</span>}
+                        <span
+                          className={
+                            isBrand
+                              ? "font-semibold text-gray-900"
+                              : "text-gray-600"
+                          }
+                        >
+                          {name}
+                          {isBrand && (
+                            <span className="text-xs text-emerald-600 ml-1.5">
+                              you
+                            </span>
+                          )}
                         </span>
                         <span className="text-gray-500">
                           {score}/{result.totalPrompts}
@@ -364,22 +462,25 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {/* Who's Actually Winning */}
             {topWinners.length > 0 && (
               <Card className="border-orange-100">
                 <CardHeader>
-                  <CardTitle className="text-lg">Who&apos;s Actually Winning</CardTitle>
+                  <CardTitle className="text-lg">
+                    Who&apos;s Actually Winning
+                  </CardTitle>
                   <p className="text-sm text-gray-500">
-                    Brands AI recommended most often in your category prompts
+                    Brands AI recommended most in your category prompts.
                   </p>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {topWinners.map(([name, count]) => (
+                    {topWinners.slice(0, 2).map(([name, count]) => (
                       <div key={name}>
                         <div className="flex justify-between text-sm mb-1">
                           <span className="text-gray-700">{name}</span>
-                          <span className="text-gray-500">{count}/{result.totalPrompts}</span>
+                          <span className="text-gray-500">
+                            {count}/{result.totalPrompts}
+                          </span>
                         </div>
                         <Progress
                           value={(count / result.totalPrompts) * 100}
@@ -387,48 +488,156 @@ export default function Home() {
                         />
                       </div>
                     ))}
+                    {topWinners.length > 2 && (
+                      <p className="text-sm text-gray-400 italic pt-2 text-center">
+                        + {topWinners.length - 2} more winning brands in your
+                        emailed report
+                      </p>
+                    )}
                   </div>
-                  {topWinners.some(([name]) =>
-                    !brand.competitors.includes(name)
-                  ) && (
-                    <p className="text-xs text-orange-600 mt-4 bg-orange-50 rounded p-3">
-                      Some of these brands aren&apos;t in your competitor list — they&apos;re winning AI search in your category anyway.
-                    </p>
-                  )}
                 </CardContent>
               </Card>
             )}
 
-            {/* Recommendations */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">What to Fix</CardTitle>
+                <CardTitle className="text-lg">What to fix</CardTitle>
                 <p className="text-sm text-gray-500">
-                  Prioritized by impact on AI visibility in {brand.geography.primary}
+                  Prioritized by impact on AI visibility in{" "}
+                  {brand.geography.primary}.
                 </p>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 {result.recommendations.map((r, i) => (
-                  <div key={i} className="border border-gray-100 rounded-lg p-4">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <p className="font-medium text-gray-900 text-sm">{r.title}</p>
-                      <div className="flex gap-2 shrink-0">
-                        <Badge className={`text-xs ${impactColor[r.impact]}`} variant="outline">
-                          {r.impact} impact
-                        </Badge>
-                        <Badge className="text-xs bg-gray-100 text-gray-600" variant="outline">
-                          {r.effort} effort
-                        </Badge>
-                      </div>
+                  <div
+                    key={i}
+                    className="border border-gray-100 rounded-lg overflow-hidden"
+                  >
+                    <div className="p-4 flex items-start gap-3">
+                      <span className="text-xs text-gray-400 font-mono shrink-0 mt-0.5">
+                        {i + 1}
+                      </span>
+                      <p className="text-sm font-medium text-gray-900 flex-1">
+                        {r.title}
+                      </p>
                     </div>
-                    <p className="text-sm text-gray-500">{r.detail}</p>
+                    <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 text-xs text-gray-500">
+                      Full details in emailed report
+                    </div>
                   </div>
                 ))}
               </CardContent>
             </Card>
           </div>
+        ) : (
+          <div>
+            <div className="text-center mb-8">
+              <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+                What your report looks like
+              </h2>
+              <p className="text-sm text-gray-500 max-w-xl mx-auto">
+                Here&apos;s an audit for Oatkind, a hypothetical D2C brand we
+                use to demo the tool. Yours will look similar.
+              </p>
+            </div>
+            <SampleAuditCard data={oatkindSample} />
+          </div>
         )}
-      </div>
+      </section>
+
+      {/* Email capture card */}
+      <section className="max-w-2xl mx-auto px-4 pb-20">
+        <div className="bg-gray-900 text-white rounded-2xl p-8 shadow-lg">
+          {emailSubmitted ? (
+            <div className="text-center py-2">
+              <h2 className="text-xl font-semibold mb-2">
+                Your report is on its way.
+              </h2>
+              <p className="text-sm text-gray-300">
+                We&apos;ll email the full breakdown to{" "}
+                <span className="text-white">{email}</span> within 24 hours.
+                Check your spam folder if it doesn&apos;t arrive.
+              </p>
+            </div>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold mb-2">
+                Get the full report
+              </h2>
+              <p className="text-sm text-gray-300 mb-6 leading-relaxed">
+                The complete list of winning brands, all 5 recommendations with
+                full detail, and a per-prompt breakdown showing exactly where
+                you&apos;re losing. In your inbox within 24 hours.
+              </p>
+              {!auditId ? (
+                <p className="text-sm text-emerald-300 bg-white/5 border border-white/10 rounded-md px-4 py-3">
+                  Run an audit above first. Then we can email you the full
+                  breakdown for your brand.
+                </p>
+              ) : (
+                <form
+                  onSubmit={submitEmail}
+                  className="flex flex-col sm:flex-row gap-3"
+                >
+                  <Input
+                    type="email"
+                    required
+                    placeholder="you@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="flex-1 h-11 bg-white text-gray-900"
+                    disabled={emailSubmitting}
+                  />
+                  <Button
+                    type="submit"
+                    disabled={!email || emailSubmitting}
+                    className="h-11 bg-emerald-500 hover:bg-emerald-600 text-white px-5"
+                  >
+                    {emailSubmitting
+                      ? "Sending..."
+                      : "Send me the full report"}
+                  </Button>
+                </form>
+              )}
+              {emailError && (
+                <p className="text-sm text-red-300 mt-3">{emailError}</p>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="max-w-2xl mx-auto px-4 pb-20">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">
+            Questions people ask
+          </h2>
+        </div>
+        <Faq />
+      </section>
+
+      {/* Final CTA */}
+      <section className="max-w-3xl mx-auto px-4 pb-20 text-center">
+        <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">
+          Ready to see where you stand?
+        </h2>
+        <p className="text-sm text-gray-500 mb-8">
+          Enter your URL. Get your score in about 60 seconds.
+        </p>
+        <Button
+          onClick={scrollToAuditInput}
+          className="h-12 px-8 text-base"
+        >
+          Get my citation score →
+        </Button>
+      </section>
+
+      {/* Footer */}
+      <footer className="max-w-6xl mx-auto px-4 py-8 border-t border-gray-100 text-xs text-gray-400 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <span>AIVisible</span>
+        <span>hello@aivisible.io</span>
+      </footer>
     </main>
   );
 }
