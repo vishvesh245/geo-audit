@@ -555,8 +555,8 @@ export default function Home() {
               </h2>
               <p className="text-sm text-gray-300">
                 We&apos;ll email the full breakdown to{" "}
-                <span className="text-white">{email}</span> within 24 hours.
-                Check your spam folder if it doesn&apos;t arrive.
+                <span className="text-white">{email}</span>{" "}within 24
+                hours. Check your spam folder if it doesn&apos;t arrive.
               </p>
             </div>
           ) : (
