@@ -4,11 +4,31 @@ import type {
   AuditPrompt,
 } from "@/app/api/audit/analyze/route";
 
+export type ActionType = "reddit" | "wikipedia" | "comparison" | "other";
+
+export type ActionMeta = {
+  // reddit
+  subreddit?: string;
+  postDrafts?: Array<{ title: string; body: string }>;
+  // wikipedia
+  articleTitle?: string;
+  stubDraft?: string;
+  suggestedSources?: string[];
+  // comparison
+  proposedTitle?: string;
+  proposedOutline?: string[];
+  targetKeywords?: string[];
+};
+
 export type Recommendation = {
   title: string;
   impact: "high" | "medium" | "low";
   effort: "high" | "medium" | "low";
   detail: string;
+  // Present on audits generated after the action-plan release.
+  // Optional so pre-existing audits render without action cards.
+  actionType?: ActionType;
+  actionMeta?: ActionMeta;
 };
 
 export type StoredAuditResult = {

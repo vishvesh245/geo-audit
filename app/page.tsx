@@ -549,15 +549,24 @@ export default function Home() {
       <section className="max-w-2xl mx-auto px-4 pb-20">
         <div className="bg-gray-900 text-white rounded-2xl p-8 shadow-lg">
           {emailSubmitted ? (
-            <div className="text-center py-2">
-              <h2 className="text-xl font-semibold mb-2">
+            <div className="text-center py-2 space-y-3">
+              <h2 className="text-xl font-semibold">
                 Your report is on its way.
               </h2>
               <p className="text-sm text-gray-300">
                 We&apos;ll email the full breakdown to{" "}
                 <span className="text-white">{email}</span>{" "}within 24
-                hours. Check your spam folder if it doesn&apos;t arrive.
+                hours.
               </p>
+              {auditId && (
+                <a
+                  href={`/report/${auditId}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-emerald-300 hover:text-emerald-200 border border-emerald-400/40 hover:border-emerald-400 rounded-md px-4 py-2 transition-colors"
+                >
+                  Or view your action plan now
+                  <span className="text-xs">→</span>
+                </a>
+              )}
             </div>
           ) : (
             <>

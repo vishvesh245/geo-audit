@@ -1,7 +1,14 @@
 import type { StoredAudit } from "./audit-store";
 
+function siteUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL || "https://geo-audit-ebon.vercel.app"
+  );
+}
+
 export function renderReport(audit: StoredAudit): string {
   const { brand, result, prompts } = audit;
+  const reportUrl = `${siteUrl()}/report/${audit.id}`;
 
   const competitorLines = Object.entries(result.competitorScores)
     .sort(([, a], [, b]) => b - a)
@@ -50,7 +57,13 @@ export function renderReport(audit: StoredAudit): string {
 
 Hi,
 
-Here's the full AIVisible report for **${brand.brandName}**.
+Your AIVisible audit for **${brand.brandName}** is ready.
+
+## 👉 Open your interactive action plan
+
+**[${reportUrl}](${reportUrl})**
+
+The action plan has copy-able post drafts, one-click links to the right subreddits and Wikipedia editors, and a checklist that saves your progress. Everything below is a summary — the plan is where you take action.
 
 ---
 
@@ -82,5 +95,6 @@ ${promptLines}
 Reply to this email if you want to talk through implementing any of these. Happy to advise.
 
 — AIVisible
+[${reportUrl}](${reportUrl})
 `;
 }

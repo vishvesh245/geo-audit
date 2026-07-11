@@ -104,11 +104,11 @@ async function generateRecommendations(
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 1500,
+    max_tokens: 4000,
     messages: [
       {
         role: "user",
-        content: `You are a GEO (Generative Engine Optimization) consultant. Write 5 specific, actionable recommendations for "${brand.brandName}" based on this AI visibility audit.
+        content: `You are a GEO (Generative Engine Optimization) consultant. Write 5 actionable recommendations for "${brand.brandName}" — each one comes with ready-to-execute assets so the brand can act today.
 
 Brand context:
 - Category: ${brand.category}
@@ -122,26 +122,56 @@ Audit results:
 - Direct competitor scores: ${competitorContext}
 - Brands actually winning in AI responses: ${winnerContext}
 
-Write recommendations that are:
-1. Specific to their geography (${brand.geography.primary}) and category
-2. Prioritized by what will move their AI citation score fastest
-3. Concrete — name specific subreddits, platforms, content types, not generic advice
-4. Aware of who is actually winning (the brands above) and why
+Constrain recommendations to these THREE action types (with a rare "other" fallback if truly warranted):
+- "reddit"     — seed authentic threads on a specific subreddit
+- "wikipedia"  — publish a Wikipedia article about the brand
+- "comparison" — publish a listicle or head-to-head comparison article
 
-Focus areas:
-- Third-party presence gaps (which specific platforms matter for this category + geography)
-- Content structure improvements for AI retrieval
-- Entity clarity across Wikipedia, Crunchbase, LinkedIn
-- Comparison and persona-specific content gaps
+Target mix across the 5 recs: roughly 2 reddit + 1 wikipedia + 2 comparison. Adjust if the brand's context clearly demands otherwise.
 
-Respond in this exact JSON format:
+For EACH recommendation, populate actionMeta with the exact fields for its type:
+
+If actionType = "reddit", actionMeta must be:
+{
+  "subreddit": "SubredditName",   // real subreddit relevant to ${brand.geography.primary} + ${brand.category}, no "r/" prefix
+  "postDrafts": [
+    { "title": "...", "body": "..." },   // 2 post drafts. Body ~200-350 words, first-person, natural, not salesy. Reddit hates promotion — write as a real user would.
+    { "title": "...", "body": "..." }
+  ]
+}
+
+If actionType = "wikipedia", actionMeta must be:
+{
+  "articleTitle": "${brand.brandName} (${brand.category.split(" ")[0].toLowerCase()} brand)",
+  "stubDraft": "'''${brand.brandName}''' is a ...\\n\\n== History ==\\n...\\n\\n== Products ==\\n...\\n\\n== References ==\\n<references/>",   // ~250-word wiki-markup draft with Overview, History, Products, References sections
+  "suggestedSources": ["Real third-party source #1 with type", "Source #2", "..."]   // 3-5 concrete sources (news outlets, Crunchbase, industry mags) relevant to this brand + geography
+}
+
+If actionType = "comparison", actionMeta must be:
+{
+  "proposedTitle": "${brand.brandName} vs [top winner]: ...",   // click-worthy title
+  "proposedOutline": ["## H2 heading 1", "## H2 heading 2", "..."],   // 5-7 H2 headings for the article
+  "targetKeywords": ["kw 1", "kw 2", "..."]   // 5-7 SEO-friendly keywords/phrases
+}
+
+If actionType = "other", leave actionMeta as {}.
+
+Recommendation rules:
+1. Titles are imperative and specific ("Seed 3 authentic threads on r/IndianStreetwear", not "Improve Reddit presence").
+2. Detail is 2-3 sentences on WHY this specific action beats alternatives.
+3. Reference the actual competitors/winners by name when relevant.
+4. Post drafts and comparison outlines must feel category-native to a reader from ${brand.geography.primary}.
+
+Respond in this exact JSON:
 {
   "recommendations": [
     {
-      "title": "string",
+      "title": "...",
       "impact": "high|medium|low",
       "effort": "high|medium|low",
-      "detail": "string (2-3 sentences, very specific and actionable)"
+      "detail": "...",
+      "actionType": "reddit|wikipedia|comparison|other",
+      "actionMeta": { ... }
     }
   ]
 }
